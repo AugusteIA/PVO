@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Outil local de préparation de la liquidation PVO à partir des fichiers DHE et ZVO 2026.">
+  <title>Liquidation PVO</title>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --ink: #172234;
+      --muted: #647084;
+      --line: #dce3eb;
+      --panel: #ffffff;
+      --canvas: #f4f7fb;
+      --navy: #142b4a;
+      --blue: #1769aa;
+      --blue-soft: #e8f2fb;
+      --green: #15745b;
+      --green-soft: #e5f5ef;
+      --amber: #a65c00;
+      --amber-soft: #fff2dc;
+      --red: #c43131;
+      --red-soft: #fff0ef;
+      --shadow: 0 9px 26px rgba(20,43,74,.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); line-height: 1.45; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .topbar { background: var(--navy); color: #fff; padding: 28px clamp(20px, 5vw, 72px); }
+    .topbar__inner, main { max-width: 1320px; margin: auto; }
+    .eyebrow { color: #a7d7ff; font-size: .75rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; margin: 0 0 8px; }
+    h1 { margin: 0; font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: -.035em; }
+    .lead { margin: 9px 0 0; color: #d5e2f0; max-width: 760px; }
+    main { padding: 28px clamp(20px, 5vw, 72px) 60px; }
+    .privacy { display: flex; gap: 12px; align-items: center; background: #e9f4ee; border: 1px solid #bfe0ce; color: #17533e; border-radius: 10px; padding: 12px 16px; font-size: .9rem; margin-bottom: 22px; }
+    .privacy strong { white-space: nowrap; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 22px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .panel__header { padding: 20px 22px 15px; border-bottom: 1px solid var(--line); }
+    .panel__header h2 { font-size: 1.08rem; margin: 0; letter-spacing: -.015em; }
+    .panel__header p { color: var(--muted); font-size: .88rem; margin: 5px 0 0; }
+    .panel__body { padding: 20px 22px 22px; }
+    .steps { display: grid; gap: 18px; }
+    .step { position: relative; padding-left: 42px; }
+    .step:not(:last-child)::after { content: ""; position: absolute; left: 15px; top: 31px; height: calc(100% + 2px); border-left: 1px solid #cbd7e3; }
+    .step-number { position: absolute; left: 0; top: 0; display: grid; place-items: center; height: 30px; width: 30px; border-radius: 50%; background: var(--blue-soft); color: var(--blue); font-weight: 800; font-size: .86rem; }
+    .step h3 { margin: 2px 0 4px; font-size: .99rem; }
+    .step p { margin: 0 0 11px; color: var(--muted); font-size: .88rem; }
+    .file-drop { border: 1.5px dashed #aebdcb; border-radius: 9px; padding: 14px; background: #fbfcfe; transition: .15s; }
+    .file-drop.drag { border-color: var(--blue); background: var(--blue-soft); }
+    .file-drop input { display: none; }
+    .file-pick { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--blue); font-size: .9rem; font-weight: 750; text-align: left; }
+    .file-pick span:last-child { padding: 6px 9px; border-radius: 6px; background: var(--blue-soft); white-space: nowrap; }
+    .file-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; margin-top: 9px; color: var(--green); }
+    .file-name.empty { color: var(--muted); }
+    .config-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+    label { display: grid; gap: 6px; font-size: .8rem; font-weight: 750; color: #465469; }
+    input[type="date"], select { width: 100%; min-height: 38px; border: 1px solid #cbd7e3; border-radius: 7px; padding: 8px 9px; color: var(--ink); background: #fff; }
+    .period { margin-top: 12px; font-size: .82rem; padding: 10px 12px; border-radius: 7px; color: #1c547d; background: #eef7ff; }
+    .primary { border: 0; border-radius: 8px; color: white; background: var(--blue); padding: 11px 16px; font-weight: 800; box-shadow: 0 3px 7px rgba(23,105,170,.2); }
+    .primary:hover { background: #0d5793; }
+    .primary:disabled { background: #91aac0; cursor: not-allowed; box-shadow: none; }
+    .ghost { background: #fff; color: var(--blue); border: 1px solid #b8cfe2; border-radius: 7px; padding: 8px 11px; font-weight: 750; font-size: .85rem; }
+    .action-row { display: flex; align-items: center; gap: 11px; margin-top: 18px; }
+    .status { font-size: .82rem; color: var(--muted); }
+    .rules { padding: 20px 22px; }
+    .rules h2 { font-size: 1rem; margin: 0 0 13px; }
+    .rule { display: grid; grid-template-columns: 26px 1fr; gap: 9px; padding: 12px 0; border-top: 1px solid #e6ebf0; font-size: .86rem; }
+    .rule:first-of-type { border-top: 0; padding-top: 0; }
+    .rule__badge { display: grid; place-items: center; width: 24px; height: 24px; background: var(--blue-soft); color: var(--blue); border-radius: 50%; font-weight: 800; font-size: .75rem; }
+    .rule strong { display: block; margin-bottom: 2px; }
+    .rule span { color: var(--muted); font-size: .8rem; }
+    .result { display: none; margin-top: 22px; }
+    .result.visible { display: block; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .metric { border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: #fbfcfe; }
+    .metric dt { color: var(--muted); font-size: .77rem; }
+    .metric dd { margin: 3px 0 0; font-size: 1.45rem; font-weight: 800; letter-spacing: -.035em; }
+    .metric.error dd { color: var(--red); }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 8px; max-height: 340px; }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    th { position: sticky; top: 0; text-align: left; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; color: #4c5c70; background: #f4f7fa; }
+    td, th { padding: 10px 11px; border-bottom: 1px solid #e7edf2; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .pill { display: inline-block; font-size: .72rem; padding: 3px 7px; font-weight: 800; border-radius: 20px; }
+    .pill.ok { color: var(--green); background: var(--green-soft); }
+    .pill.error { color: var(--red); background: var(--red-soft); }
+    .result-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 15px; }
+    .error-box { display: none; border: 1px solid #fac8c3; background: var(--red-soft); color: #922c25; border-radius: 8px; padding: 11px 13px; font-size: .86rem; margin-top: 14px; white-space: pre-line; }
+    .error-box.visible { display: block; }
+    .field-map { display: none; margin-top: 15px; border-top: 1px solid var(--line); padding-top: 15px; }
+    .field-map.visible { display: block; }
+    .field-map h3 { margin: 0 0 10px; font-size: .92rem; }
+    .field-map p { margin: 0 0 12px; font-size: .82rem; color: var(--muted); }
+    .mapping { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .mapping label { font-size: .73rem; }
+    .mapping select { font-size: .82rem; }
+    .help { margin-top: 12px; color: var(--muted); font-size: .78rem; }
+    @media (max-width: 940px) { .layout { grid-template-columns: 1fr; } .metrics { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 580px) { .config-grid, .mapping { grid-template-columns: 1fr; } .metrics { grid-template-columns: 1fr 1fr; } .result-actions { align-items: stretch; flex-direction: column; } .result-actions button { width: 100%; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <p class="eyebrow">Caisse des Dépôts · Compensation & Benefits</p>
+      <h1>Liquidation PVO</h1>
+      <p class="lead">Préparez les onglets individuels et le calcul de PVO à liquider à partir des fichiers DHE et ZVO 2026.</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="privacy"><strong>Traitement local</strong><span>Les fichiers restent dans votre navigateur. Aucune donnée n’est transmise à un serveur.</span></div>
+    <div class="layout">
+      <section class="panel" aria-labelledby="workflow-title">
+        <div class="panel__header"><h2 id="workflow-title">Préparer la liquidation</h2><p>Importez les classeurs, vérifiez le périmètre, puis générez une copie du fichier ZVO.</p></div>
+        <div class="panel__body">
+          <div class="steps">
+            <div class="step">
+              <div class="step-number">1</div>
+              <h3>Importer les fichiers</h3>
+              <p>Le fichier ZVO d’origine n’est jamais modifié. La page produit une nouvelle copie à télécharger.</p>
+              <div class="config-grid">
+                <div class="file-drop" id="dheDrop"><input id="dheFile" type="file" accept=".xlsx,.xls"><button class="file-pick" type="button" data-pick="dheFile"><span>DHE – Suivi de campagne 2026</span><span>Choisir</span></button><span class="file-name empty" id="dheName">Aucun fichier sélectionné</span></div>
+                <div class="file-drop" id="zvoDrop"><input id="zvoFile" type="file" accept=".xlsx,.xls"><button class="file-pick" type="button" data-pick="zvoFile"><span>ZVO JANVIER à [Mois N] 2026</span><span>Choisir</span></button><span class="file-name empty" id="zvoName">Aucun fichier sélectionné</span></div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">2</div>
+              <h3>Définir le mois de traitement</h3>
+              <p>Sont retenus les départs du 1er janvier de l’année N au dernier jour du mois N-1.</p>
+              <div class="config-grid">
+                <label>Date de traitement<input type="date" id="runDate"></label>
+                <label>Feuille DHE<select id="dheSheet" disabled><option>Importer le fichier DHE</option></select></label>
+                <label>Feuille contenant tempMain<select id="zvoSheet" disabled><option>Importer le fichier ZVO</option></select></label>
+              </div>
+              <div class="period" id="periodInfo">Sélectionnez la date de traitement.</div>
+              <div class="field-map" id="fieldMap">
+                <h3>Vérification des colonnes</h3>
+                <p>Les colonnes DHE sont contrôlées à leurs emplacements imposés. Sélectionnez uniquement la colonne de mois de la table ZVO <strong>tempMain</strong> si nécessaire.</p>
+                <div class="mapping" id="zvoMapping" style="margin-top:10px"></div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">3</div>
+              <h3>Analyser et générer</h3>
+              <p>La synthèse signale les anomalies. Chaque agent retenu obtient un onglet, y compris lorsqu’une erreur doit être revue.</p>
+              <div class="action-row"><button class="primary" type="button" id="analyseBtn" disabled>Analyser les fichiers</button><span class="status" id="statusText">Importez les deux fichiers pour commencer.</span></div>
+              <div class="error-box" id="errorBox" role="alert"></div>
+            </div>
+          </div>
+          <section class="result" id="result" aria-live="polite">
+            <div class="panel__header" style="margin:22px -22px 0"><h2>Résultat de l’analyse</h2><p>Vérifiez les agents et les anomalies avant de télécharger le fichier.</p></div>
+            <div style="padding-top:18px">
+              <dl class="metrics">
+                <div class="metric"><dt>Lignes DHE lues</dt><dd id="metricRead">0</dd></div>
+                <div class="metric"><dt>Agents retenus</dt><dd id="metricSelected">0</dd></div>
+                <div class="metric"><dt>Onglets créés</dt><dd id="metricSheets">0</dd></div>
+                <div class="metric error"><dt>Anomalies</dt><dd id="metricErrors">0</dd></div>
+              </dl>
+              <div class="table-wrap"><table><thead><tr><th>Matricule</th><th>Agent</th><th>Mois de paiement</th><th>Somme U</th><th>PVO à liquider</th><th>Statut</th></tr></thead><tbody id="previewBody"></tbody></table></div>
+              <div class="result-actions"><span class="status" id="resultNote">Le fichier ne sera disponible qu’après l’analyse.</span><button class="primary" type="button" id="downloadBtn" disabled>Télécharger le fichier ZVO complété</button></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="panel rules" aria-labelledby="rules-title">
+        <h2 id="rules-title">Règles appliquées</h2>
+        <div class="rule"><div class="rule__badge">1</div><div><strong>Montant DHE vide</strong><span>Les cellules vides ou contenant <code>""</code> sont retenues. La valeur 0 est exclue.</span></div></div>
+        <div class="rule"><div class="rule__badge">2</div><div><strong>Départ de l’année N</strong><span>Du 1er janvier N jusqu’au dernier jour du mois précédent.</span></div></div>
+        <div class="rule"><div class="rule__badge">3</div><div><strong>Rapprochement par matricule</strong><span>Le matricule est recherché dans la colonne C de la table commune ZVO <em>tempMain</em>.</span></div></div>
+        <div class="rule"><div class="rule__badge">4</div><div><strong>Formule PVO</strong><span>Somme des montants U × taux d’atteinte × taux PVO cible, arrondie à deux décimales.</span></div></div>
+        <div class="rule"><div class="rule__badge">5</div><div><strong>Anomalies visibles</strong><span>Un texte rouge commençant par « ERREUR » est créé dans l’onglet concerné.</span></div></div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+  (() => {
+    'use strict';
+    const $ = (id) => document.getElementById(id);
+    const state = { dhe: null, zvo: null, output: null, results: [], mappings: {} };
+    const dheFields = [
+      ['matricule', 'Matricule', 1], ['nom', 'Nom', 2], ['prenom', 'Prénom', 3], ['position', 'Position administrative', 5],
+      ['pvoPct', 'Période 1 : PVO Cible', 16], ['atteinte', 'Période 1 : taux d’atteinte calculé', 17], ['montant', 'Montant', 23], ['dateDepart', 'Mois de paiement (dernier mois de présence)', 24]
+    ];
+    const zvoFields = [['zvoMatricule', 'Matricule (colonne C)', 2], ['zvoDate', 'Mois / date des lignes ZVO', -1], ['zvoSalary', 'Montant salarial (colonne U)', 20]];
+    const normalise = (value) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const headerMatches = (headers, index, expected) => {
+      const actual = normalise(headers[index]);
+      const wanted = normalise(expected);
+      return Boolean(actual) && (actual === wanted || actual.includes(wanted) || wanted.includes(actual));
+    };
+    const asDate = (value) => {
+      if (value instanceof Date && !isNaN(value)) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+      if (typeof value === 'number' && isFinite(value)) {
+        const p = XLSX.SSF.parse_date_code(value);
+        return p ? new Date(p.y, p.m - 1, p.d) : null;
+      }
+      if (typeof value !== 'string' || !value.trim()) return null;
+      const french = value.trim().match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+      if (french) return new Date(Number(french[3]), Number(french[2]) - 1, Number(french[1]));
+      const d = new Date(value);
+      return isNaN(d) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    };
+    const excelNumber = (value) => {
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const clean = value.trim().replace(/\s/g, '').replace('%', '').replace(',', '.');
+        const n = Number(clean);
+        return isFinite(n) ? (value.includes('%') || n > 1 && n <= 100 ? n / 100 : n) : null;
+      }
+      return null;
+    };
+    const isBlank = (value) => value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+    const safeText = (value) => String(value ?? '').replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
+    const displayDate = (value) => { const d = asDate(value); return d ? d.toLocaleDateString('fr-FR') : '—'; };
+    const euros = (value) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(value || 0);
+    const percentLiteral = (value) => `${(value * 100).toLocaleString('en-US', {maximumFractionDigits: 8})}%`;
+    const currentYmd = () => new Date().toISOString().slice(0, 10);
+
+    $('runDate').value = currentYmd();
+    function periodBounds() {
+      const run = asDate($('runDate').value);
+      if (!run) return null;
+      const start = new Date(run.getFullYear(), 0, 1);
+      const end = new Date(run.getFullYear(), run.getMonth(), 0);
+      return { start, end, year: run.getFullYear() };
+    }
+    function updatePeriod() {
+      const bounds = periodBounds();
+      $('periodInfo').textContent = bounds ? `Période retenue : du ${bounds.start.toLocaleDateString('fr-FR')} au ${bounds.end.toLocaleDateString('fr-FR')} inclus.` : 'Sélectionnez une date de traitement valide.';
+    }
+    updatePeriod();
+    $('runDate').addEventListener('change', () => { updatePeriod(); updateActionState(); });
+
+    document.querySelectorAll('[data-pick]').forEach(button => button.addEventListener('click', () => $(button.dataset.pick).click()));
+    function installDrop(dropId, inputId) {
+      const drop = $(dropId); const input = $(inputId);
+      ['dragenter', 'dragover'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.add('drag'); }));
+      ['dragleave', 'drop'].forEach(type => drop.addEventListener(type, event => { event.preventDefault(); drop.classList.remove('drag'); }));
+      drop.addEventListener('drop', event => { if (event.dataTransfer.files[0]) loadFile(inputId, event.dataTransfer.files[0]); });
+      input.addEventListener('change', () => { if (input.files[0]) loadFile(inputId, input.files[0]); });
+    }
+    installDrop('dheDrop', 'dheFile'); installDrop('zvoDrop', 'zvoFile');
+
+    async function loadFile(inputId, file) {
+      const target = inputId === 'dheFile' ? 'dhe' : 'zvo';
+      const name = target === 'dhe' ? 'dheName' : 'zvoName';
+      showError('');
+      try {
+        const buffer = await file.arrayBuffer();
+        state[target] = XLSX.read(buffer, { type: 'array', cellFormula: true, cellDates: true });
+        $(name).classList.remove('empty'); $(name).textContent = file.name;
+        populateSheetSelect(target);
+        prepareMappings();
+        updateActionState();
+      } catch (error) { showError(`Impossible de lire « ${file.name} ». Vérifiez qu’il s’agit d’un fichier Excel valide.`); }
+    }
+    function populateSheetSelect(target) {
+      const select = $(target === 'dhe' ? 'dheSheet' : 'zvoSheet');
+      const sheets = state[target].SheetNames;
+      select.innerHTML = sheets.map(name => `<option value="${safeText(name)}">${safeText(name)}</option>`).join('');
+      select.disabled = false;
+      select.onchange = () => { prepareMappings(); state.output = null; $('downloadBtn').disabled = true; };
+    }
+    function headersOf(workbook, sheetName) {
+      if (!workbook || !sheetName) return [];
+      const sheet = workbook.Sheets[sheetName];
+      return (XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true })[0] || []).map(value => value ?? '');
+    }
+    function selectMarkup(id, label, headers, selected, locked = false) {
+      const options = ['<option value="">— sélectionner —</option>'].concat(headers.map((h, index) => `<option value="${index}" ${index === selected ? 'selected' : ''}>${safeText(XLSX.utils.encode_col(index))} · ${safeText(h || '(sans intitulé)')}</option>`));
+      return `<label>${safeText(label)}<select id="map_${id}" ${locked ? 'disabled' : ''}>${options.join('')}</select></label>`;
+    }
+    function prepareMappings() {
+      if (!state.dhe || !state.zvo) return;
+      const zvoHeaders = headersOf(state.zvo, $('zvoSheet').value);
+      const mapping = {};
+      dheFields.forEach(([id, , index]) => { mapping[id] = index; });
+      mapping.zvoMatricule = 2;
+      mapping.zvoDate = zvoHeaders.findIndex(h => /date|mois|periode|période/i.test(String(h)));
+      mapping.zvoSalary = 20;
+      $('zvoMapping').innerHTML = zvoFields.map(([id, label]) => selectMarkup(id, label, zvoHeaders, mapping[id], id !== 'zvoDate')).join('');
+      $('fieldMap').classList.add('visible');
+      state.mappings = mapping;
+    }
+    function getMappings() {
+      const result = {};
+      dheFields.forEach(([id, , index]) => { result[id] = index; });
+      zvoFields.forEach(([id, , index]) => { const el = $(`map_${id}`); result[id] = el && el.value !== '' ? Number(el.value) : index; });
+      return result;
+    }
+    function updateActionState() { $('analyseBtn').disabled = !(state.dhe && state.zvo && periodBounds()); }
+    function showError(message) { $('errorBox').textContent = message; $('errorBox').classList.toggle('visible', Boolean(message)); }
+
+    function errorListForAgent(agent, zvoRows) {
+      const errors = [];
+      if (!agent.matricule) errors.push('Matricule absent dans le fichier DHE.');
+      if (!agent.dateDepart) errors.push('Mois de paiement (dernier mois de présence) absent ou invalide.');
+      if (agent.pvoPct === null || agent.pvoPct < .04 || agent.pvoPct > .15) errors.push('Taux PVO cible absent, non numérique ou hors plage 4 %–15 %.');
+      if (agent.atteinte === null || agent.atteinte < 0 || agent.atteinte > 1) errors.push('Taux d’atteinte calculé absent, non numérique ou hors plage 0 %–100 %.');
+      if (!zvoRows.length) errors.push('Matricule introuvable ou aucune ligne de l’année N dans ZVO.');
+      zvoRows.forEach(row => { if (typeof row.values[20] !== 'number') errors.push(`Valeur non numérique ou incohérente en colonne U (ligne ZVO ${row.sourceRow}).`); });
+      return [...new Set(errors)];
+    }
+    function cleanSheetName(base, used) {
+      let name = String(base || 'SANS NOM').replace(/[\\/*?:\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || 'SANS NOM';
+      let candidate = name; let counter = 2;
+      while (used.has(candidate)) { candidate = `${name.slice(0, 28)} (${counter++})`; }
+      used.add(candidate); return candidate;
+    }
+    function runAnalysis() {
+      showError(''); state.output = null; $('downloadBtn').disabled = true;
+      const mapping = getMappings();
+      if (!Number.isInteger(mapping.zvoDate) || mapping.zvoDate < 0) { showError('Sélectionnez la colonne qui porte le mois ou la date des lignes de la table ZVO tempMain.'); return; }
+      const bounds = periodBounds();
+      if (!bounds) { showError('La date de traitement est invalide.'); return; }
+      const dheSheet = state.dhe.Sheets[$('dheSheet').value];
+      const zvoSheet = state.zvo.Sheets[$('zvoSheet').value];
+      const dheData = XLSX.utils.sheet_to_json(dheSheet, { header: 1, defval: null, raw: true, blankrows: false });
+      const zvoData = XLSX.utils.sheet_to_json(zvoSheet, { header: 1, defval: null, raw: true, blankrows: false });
+      const dheHeaders = dheData[0] || []; const zvoHeaders = zvoData[0] || [];
+      const invalidDhe = dheFields.filter(([, label, index]) => !headerMatches(dheHeaders, index, label)).map(([, label, index]) => `${XLSX.utils.encode_col(index)} : ${label}`);
+      if (invalidDhe.length) { showError(`Le fichier DHE ne respecte pas les colonnes attendues :\n${invalidDhe.join('\n')}`); return; }
+      if (zvoHeaders.length <= 20 || !headerMatches(zvoHeaders, 2, 'Matricule') || !headerMatches(zvoHeaders, 20, 'Montant salarial')) { showError('La table ZVO tempMain doit contenir le matricule en colonne C et « Montant salarial » en colonne U.'); return; }
+      const eligible = [];
+      dheData.slice(1).forEach((row, i) => {
+        const dateDepart = asDate(row[mapping.dateDepart]);
+        if (isBlank(row[mapping.montant]) && dateDepart && dateDepart >= bounds.start && dateDepart <= bounds.end) {
+          eligible.push({
+            sourceRow: i + 2, matricule: String(row[mapping.matricule] ?? '').trim(), nom: String(row[mapping.nom] ?? '').trim(), prenom: String(row[mapping.prenom] ?? '').trim(),
+            dateDepart, pvoPct: excelNumber(row[mapping.pvoPct]), atteinte: excelNumber(row[mapping.atteinte]), original: row
+          });
+        }
+      });
+      const byMatricule = new Map();
+      zvoData.slice(1).forEach((row, i) => {
+        const matricule = String(row[2] ?? '').trim(); const month = asDate(row[mapping.zvoDate]);
+        if (matricule && month && month.getFullYear() === bounds.year) {
+          if (!byMatricule.has(matricule)) byMatricule.set(matricule, []);
+          byMatricule.get(matricule).push({ values: row, sourceRow: i + 2, month });
+        }
+      });
+      const seen = new Map(); eligible.forEach(agent => { if (agent.matricule) seen.set(agent.matricule, (seen.get(agent.matricule) || 0) + 1); });
+      const unique = []; const used = new Set();
+      eligible.forEach(agent => { const key = agent.matricule || `ligne-${agent.sourceRow}`; if (!used.has(key)) { used.add(key); agent.duplicate = Boolean(agent.matricule && seen.get(agent.matricule) > 1); unique.push(agent); } });
+      state.results = unique.map(agent => {
+        const zvoRows = byMatricule.get(agent.matricule) || [];
+        const errors = errorListForAgent(agent, zvoRows);
+        if (agent.duplicate) errors.unshift('Matricule en doublon dans les lignes DHE retenues. Un seul onglet a été créé.');
+        const sumU = zvoRows.reduce((total, row) => total + (typeof row.values[20] === 'number' ? row.values[20] : 0), 0);
+        const final = errors.length ? null : Math.round((sumU * agent.atteinte * agent.pvoPct + Number.EPSILON) * 100) / 100;
+        return { ...agent, zvoRows, errors, sumU, final };
+      });
+      buildOutput(bounds, zvoData[0]); renderResults(dheData.length - 1);
+      $('statusText').textContent = `${state.results.length} agent(s) retenu(s). Vérifiez le résultat avant le téléchargement.`;
+      $('downloadBtn').disabled = false;
+    }
+    function buildOutput(bounds, headers) {
+      const wb = XLSX.read(XLSX.write(state.zvo, { type: 'array', bookType: 'xlsx' }), { type: 'array', cellFormula: true, cellDates: true });
+      const usedNames = new Set(wb.SheetNames);
+      if (wb.SheetNames.includes('Synthèse liquidation PVO')) { delete wb.Sheets['Synthèse liquidation PVO']; wb.SheetNames = wb.SheetNames.filter(name => name !== 'Synthèse liquidation PVO'); usedNames.delete('Synthèse liquidation PVO'); }
+      const summary = [['Matricule', 'Nom', 'Prénom', 'Mois de paiement', 'Somme colonne U', 'Taux d’atteinte calculé', 'Taux PVO cible', 'PVO à liquider', 'Statut', 'Détail']];
+      state.results.forEach(agent => {
+        const sheetName = cleanSheetName(`${agent.nom.toUpperCase()} ${agent.prenom ? agent.prenom.charAt(0).toUpperCase() + agent.prenom.slice(1).toLowerCase() : ''}`.trim(), usedNames);
+        const sheetRows = [['Liquidation PVO'], ['Matricule', agent.matricule], ['Nom', agent.nom], ['Prénom', agent.prenom], ['Mois de paiement', agent.dateDepart], [], headers];
+        agent.zvoRows.forEach(row => sheetRows.push([...row.values]));
+        const firstDataRow = 8; const totalRow = firstDataRow + agent.zvoRows.length;
+        let formula = null;
+        if (agent.errors.length) {
+          sheetRows.push([]); sheetRows.push([`ERREUR : ${agent.errors.join(' ')}`]);
+        } else {
+          formula = `ROUND(SUM(U${firstDataRow}:U${totalRow - 1})*${percentLiteral(agent.atteinte)}*${percentLiteral(agent.pvoPct)},2)`;
+          const total = []; total[19] = 'PVO à liquider'; total[20] = null; sheetRows.push(total);
+        }
+        const ws = XLSX.utils.aoa_to_sheet(sheetRows, { cellDates: true });
+        ws['!cols'] = headers.map((header, i) => ({ wch: Math.min(28, Math.max(12, String(header || XLSX.utils.encode_col(i)).length + 2)) }));
+        ws['!cols'][0] = { wch: 24 }; ws['!cols'][19] = { wch: 19 }; ws['!cols'][20] = { wch: 18 };
+        ws['!freeze'] = { xSplit: 0, ySplit: 7 };
+        if (formula) ws[`U${totalRow}`] = { t: 'n', f: formula, z: '#,##0.00 [$€-fr-FR]' };
+        if (agent.errors.length) { const errorRow = firstDataRow + agent.zvoRows.length + 1; ws[`A${errorRow}`] = { t: 's', v: `ERREUR : ${agent.errors.join(' ')}`, s: { font: { color: { rgb: 'C43131' }, bold: true } } }; ws['!merges'] = [{ s: { r: errorRow - 1, c: 0 }, e: { r: errorRow - 1, c: Math.min(5, headers.length - 1) } }]; }
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        summary.push([agent.matricule, agent.nom, agent.prenom, agent.dateDepart, agent.sumU, agent.atteinte, agent.pvoPct, agent.final, agent.errors.length ? 'ERREUR' : 'OK', agent.errors.join(' ')]);
+      });
+      const summaryWs = XLSX.utils.aoa_to_sheet(summary, { cellDates: true });
+      summaryWs['!cols'] = [{wch:16},{wch:18},{wch:18},{wch:16},{wch:17},{wch:18},{wch:17},{wch:16},{wch:12},{wch:68}];
+      XLSX.utils.book_append_sheet(wb, summaryWs, 'Synthèse liquidation PVO');
+      state.output = wb;
+    }
+    function renderResults(readCount) {
+      const errors = state.results.filter(a => a.errors.length).length;
+      $('metricRead').textContent = readCount; $('metricSelected').textContent = state.results.length; $('metricSheets').textContent = state.results.length; $('metricErrors').textContent = errors;
+      $('previewBody').innerHTML = state.results.length ? state.results.map(agent => `<tr><td>${safeText(agent.matricule || '—')}</td><td>${safeText(`${agent.nom.toUpperCase()} ${agent.prenom}`.trim() || '—')}</td><td>${displayDate(agent.dateDepart)}</td><td>${euros(agent.sumU)}</td><td>${agent.final === null ? '—' : euros(agent.final)}</td><td><span class="pill ${agent.errors.length ? 'error' : 'ok'}">${agent.errors.length ? 'ERREUR' : 'OK'}</span></td></tr>`).join('') : '<tr><td colspan="6">Aucun agent ne respecte les critères de sélection.</td></tr>';
+      $('resultNote').textContent = errors ? `${errors} onglet(s) contiennent une erreur à examiner.` : 'Aucune anomalie détectée dans les règles configurées.';
+      $('result').classList.add('visible');
+    }
+    $('analyseBtn').addEventListener('click', runAnalysis);
+    $('downloadBtn').addEventListener('click', () => {
+      if (!state.output) return;
+      const date = $('runDate').value || currentYmd();
+      XLSX.writeFile(state.output, `ZVO_liquidation_PVO_${date}.xlsx`, { compression: true });
+    });
+  })();
+  </script>
+</body>
+</html>
